@@ -1,65 +1,281 @@
-import Image from "next/image";
+'use client';
+
+import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabaseBrowser';
+
+type TripStatusFilter = 'active' | 'ended';
 
 export default function Home() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+  const [user, setUser] = useState<any>(null);
+  const [trips, setTrips] = useState<any[]>([]);
+  const [loadingTrips, setLoadingTrips] = useState(false);
+
+  const [tripFilter, setTripFilter] = useState<TripStatusFilter>('active');
+
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [message, setMessage] = useState<string>('');
+
+  async function signOut() {
+  await supabase.auth.signOut();
+  window.location.reload();
+}
+
+  async function loadTrips(userId: string, filter: TripStatusFilter) {
+    setLoadingTrips(true);
+
+    const { data: tripsData, error } = await supabase
+      .from('trips')
+      .select('*')
+      .eq('owner_id', userId)
+      .eq('status', filter)
+      .order('created_at', { ascending: false });
+
+    if (!error && tripsData) {
+      setTrips(tripsData);
+    } else {
+      setTrips([]);
+    }
+
+    setLoadingTrips(false);
+  }
+
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabase.auth.getUser();
+      setUser(data.user);
+
+      if (data.user) {
+        await loadTrips(data.user.id, tripFilter);
+      }
+    }
+
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    async function reloadIfSignedIn() {
+      if (!user?.id) return;
+      await loadTrips(user.id, tripFilter);
+    }
+
+    reloadIfSignedIn();
+  }, [tripFilter, user?.id]);
+
+  async function signInWithEmail(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus('sending');
+    setMessage('');
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: window.location.origin,
+      },
+    });
+
+    if (error) {
+      setStatus('error');
+      setMessage(error.message);
+      return;
+    }
+
+    setStatus('sent');
+    setMessage(
+      'We’ve emailed you a secure sign-in link. You can close this page while you wait.'
+    );
+  }
+
+  if (user) {
+    return (
+      <main style={{ maxWidth: 420, margin: '40px auto', padding: 16, fontFamily: 'system-ui' }}>
+        <h1 style={{ fontSize: 28 }}>Pilgrim</h1>
+
+        <p style={{ marginTop: 12 }}>You are signed in as:</p>
+        <p style={{ fontWeight: 'bold' }}>{user.email}</p>
+        
+
+        <hr style={{ margin: '24px 0' }} />
+
+        <h2 style={{ fontSize: 18, marginBottom: 8 }}>Start a journey</h2>
+
+        <TripCreator
+          userId={user.id}
+          onCreated={async () => {
+            setTripFilter('active');
+            await loadTrips(user.id, 'active');
+          }}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+
+        <hr style={{ margin: '24px 0' }} />
+
+        <h2 style={{ fontSize: 18, marginBottom: 8 }}>Your journeys</h2>
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          <button
+            onClick={() => setTripFilter('active')}
+            style={{
+              padding: '8px 10px',
+              borderRadius: 10,
+              border: '1px solid rgba(0,0,0,0.18)',
+              background: tripFilter === 'active' ? 'rgba(0,0,0,0.06)' : 'transparent',
+              cursor: 'pointer',
+            }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            Active
+          </button>
+
+          <button
+            onClick={() => setTripFilter('ended')}
+            style={{
+              padding: '8px 10px',
+              borderRadius: 10,
+              border: '1px solid rgba(0,0,0,0.18)',
+              background: tripFilter === 'ended' ? 'rgba(0,0,0,0.06)' : 'transparent',
+              cursor: 'pointer',
+            }}
           >
-            Documentation
-          </a>
+            Completed
+          </button>
         </div>
+
+        {loadingTrips ? <p>Loading trips…</p> : null}
+
+        {!loadingTrips && trips.length === 0 ? (
+          <p>{tripFilter === 'active' ? 'No active journeys yet.' : 'No completed journeys yet.'}</p>
+        ) : null}
+
+        {trips.length > 0 ? (
+          <ul>
+            {trips.map((t) => (
+              <li key={t.id} style={{ marginBottom: 6 }}>
+                <a href={`/trip/${t.id}`}>{t.title}</a>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </main>
-    </div>
+    );
+  }
+
+  return (
+    <main style={{ maxWidth: 420, margin: '40px auto', padding: 16, fontFamily: 'system-ui' }}>
+      <h1 style={{ fontSize: 28, marginBottom: 8 }}>Sign in to Pilgrim</h1>
+
+      <p style={{ marginTop: 0, marginBottom: 20, opacity: 0.85 }}>
+        We’ll email you a secure sign-in link.  
+        This keeps Pilgrim simple and private — no passwords to remember.
+      </p>
+
+      <form onSubmit={signInWithEmail}>
+        <label style={{ display: 'block', marginBottom: 8 }}>
+          Email
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            style={{
+              width: '100%',
+              padding: 10,
+              marginTop: 6,
+              borderRadius: 8,
+              border: '1px solid #ccc',
+            }}
+            placeholder="you@example.com"
+          />
+        </label>
+
+        <button
+          type="submit"
+          disabled={status === 'sending'}
+          style={{
+            width: '100%',
+            padding: 10,
+            borderRadius: 10,
+            border: 'none',
+            cursor: status === 'sending' ? 'default' : 'pointer',
+          }}
+        >
+          {status === 'sending' ? 'Sending sign-in link…' : 'Email me a sign-in link'}
+        </button>
+
+        <p style={{ marginTop: 12, fontSize: 14, opacity: 0.7 }}>
+          If you’ve used Pilgrim before, this will just sign you back in.
+        </p>
+      </form>
+
+      {message ? <p style={{ marginTop: 16 }}>{message}</p> : null}
+    </main>
+  );
+}
+
+function TripCreator({ userId, onCreated }: { userId: string; onCreated?: () => void }) {
+  const [title, setTitle] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  async function createTrip(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setMsg('');
+
+    const { error } = await supabase.from('trips').insert({
+      owner_id: userId,
+      title,
+      status: 'active',
+    });
+
+    if (error) {
+      setMsg(`Error: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    setMsg('Trip created.');
+    setTitle('');
+    setSaving(false);
+
+    onCreated?.();
+  }
+
+  return (
+    <form onSubmit={createTrip}>
+      <label style={{ display: 'block', marginBottom: 8 }}>
+        Journey name
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
+          style={{
+            width: '100%',
+            padding: 10,
+            marginTop: 6,
+            borderRadius: 8,
+            border: '1px solid #ccc',
+          }}
+          placeholder="e.g. Pyrenees 2026"
+        />
+      </label>
+
+      <button
+        type="submit"
+        disabled={saving}
+        style={{
+  padding: 12,
+  borderRadius: 10,
+  border: '1px solid rgba(0,0,0,0.18)',
+  background: 'rgba(0,0,0,0.04)',
+  cursor: saving ? 'default' : 'pointer',
+  width: '100%',
+}}
+
+      >
+        {saving ? 'Creating…' : 'Start a journey'}
+      </button>
+
+      {msg ? <p style={{ marginTop: 12 }}>{msg}</p> : null}
+    </form>
   );
 }
